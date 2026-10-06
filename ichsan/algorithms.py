@@ -8,13 +8,7 @@ import itertools
 import math
 from time import perf_counter_ns
 
-<<<<<<<< HEAD:ardi/algorithms.py
-from ardi.graph_io import Graph
-========
 from ichsan.graph_io import Graph
->>>>>>>> e859fa658358df3fcf2b0258f278e0ad72f540e9:ichsan/algorithms.py
-
-
 @dataclass(frozen=True)
 class Step:
     kind: str  # visit, inspect, relax, pass, done
