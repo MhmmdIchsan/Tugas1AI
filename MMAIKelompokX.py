@@ -6,7 +6,7 @@ Run it from any directory: python path/to/MMAIKelompokX.py
 
 from pathlib import Path
 
-from gui import ShortestPathApp
+from ichsan.gui import ShortestPathApp
 
 
 if __name__ == "__main__":
