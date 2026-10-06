@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ardi.gui import ShortestPathApp
+from ichsan.gui import ShortestPathApp
 
 
 if __name__ == "__main__":
