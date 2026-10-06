@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import math
 
-from ichsan.algorithms import Result
-from ichsan.graph_io import Graph
+from algorithms import Result
+from graph_io import Graph
 
 
 def number(value: float) -> str:
-    return "∞" if math.isinf(value) else f"{value:g}"
+    return "∞" if value == math.inf else str(value) if isinstance(value, int) else f"{value:.12g}"
 
 
 class Playback:
@@ -27,6 +27,7 @@ class Playback:
         self.visited: set[str] = set()
         self.current: str | None = None
         self.active_edge: tuple[str, str] | None = None
+        self.updated = None
         self.finished = False
         self.iteration = 0
         self.title = "Siap menjelajahi graf"
@@ -38,6 +39,7 @@ class Playback:
         step = self.result.steps[self.index]
         self.index += 1
         self.active_edge = None
+        self.updated = None
         if step.kind == "pass":
             self.iteration = step.iteration or 0
             self.current = None
@@ -59,6 +61,7 @@ class Playback:
                 self.detail = (f"Jarak lewat {step.node}: {number(self.distances[step.node])} + {number(weight)} = "
                                f"{number(candidate)}. Jarak {step.neighbor} saat ini: {number(old)}.")
             elif step.distance is not None:
+                self.updated = step.neighbor
                 self.distances[step.neighbor] = step.distance
                 self.previous[step.neighbor] = step.node
                 self.title = f"Rute lebih pendek ke {step.neighbor}"
@@ -69,6 +72,8 @@ class Playback:
             self.title = "Jalur terpendek ditemukan" if self.result.path else "Tujuan tidak terjangkau"
             self.detail = (f"{' → '.join(self.result.path)} · total bobot {number(self.result.cost)}."
                            if self.result.path else f"Tidak ada jalur dari {self.start} menuju {self.goal} pada graf ini.")
+        if self.finished and self.result.trace_truncated:
+            self.detail += " Jejak dibatasi; tabel merupakan keadaan terakhir yang terekam, bukan semua jarak final."
         return True
 
     def seek(self, index: int) -> None:

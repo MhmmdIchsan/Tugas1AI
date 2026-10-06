@@ -15,9 +15,13 @@ test_bom_comments_and_blank_lines (test_algorithms.InputValidation.test_bom_comm
 test_duplicate_keys_rejected (test_algorithms.InputValidation.test_duplicate_keys_rejected) ... ok
 test_malformed_and_nonfinite_inputs (test_algorithms.InputValidation.test_malformed_and_nonfinite_inputs) ... ok
 test_payload_is_never_executed (test_algorithms.InputValidation.test_payload_is_never_executed) ... ok
-test_animation_reset_algorithm_switch_and_final (test_gui.GUIIntegration.test_animation_reset_algorithm_switch_and_final) ... ok
-test_directed_loops_unreachable_and_single_node_render (test_gui.GUIIntegration.test_directed_loops_unreachable_and_single_node_render) ... ok
-test_endpoint_change_and_error_recovery (test_gui.GUIIntegration.test_endpoint_change_and_error_recovery) ... ok
+test_canvas_drag_zoom_pan_reset_and_hover (test_gui.MergedGUI.test_canvas_drag_zoom_pan_reset_and_hover) ... ok
+test_context_endpoint_swap_and_invalid_file_recovery (test_gui.MergedGUI.test_context_endpoint_swap_and_invalid_file_recovery) ... ok
+test_edge_cases_and_resize (test_gui.MergedGUI.test_edge_cases_and_resize) ... ok
+test_examples_and_component_sync (test_gui.MergedGUI.test_examples_and_component_sync) ... ok
+test_export_json_and_text (test_gui.MergedGUI.test_export_json_and_text) ... ok
+test_forward_backward_seek_and_reset (test_gui.MergedGUI.test_forward_backward_seek_and_reset) ... ok
+test_play_pause_and_switch_algorithm (test_gui.MergedGUI.test_play_pause_and_switch_algorithm) ... ok
 test_disconnected_and_same_start_goal (test_tugas1.AssignmentExamples.test_disconnected_and_same_start_goal) ... ok
 test_first_example (test_tugas1.AssignmentExamples.test_first_example) ... ok
 test_invalid_input_is_rejected (test_tugas1.AssignmentExamples.test_invalid_input_is_rejected) ... ok
@@ -25,6 +29,6 @@ test_second_example (test_tugas1.AssignmentExamples.test_second_example) ... ok
 test_third_example_and_bh_format (test_tugas1.AssignmentExamples.test_third_example_and_bh_format) ... ok
 
 ----------------------------------------------------------------------
-Ran 25 tests in 1.280s
+Ran 29 tests in 3.626s
 
 OK
