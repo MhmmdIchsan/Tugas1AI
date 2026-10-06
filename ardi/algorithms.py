@@ -8,7 +8,12 @@ import itertools
 import math
 from time import perf_counter_ns
 
-from ichsan.graph_io import Graph
+try:
+    from ardi.graph_io import Graph
+except (ImportError, ModuleNotFoundError):
+    from graph_io import Graph
+
+
 @dataclass(frozen=True)
 class Step:
     kind: str  # visit, inspect, relax, pass, done
