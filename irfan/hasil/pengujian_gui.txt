@@ -1,0 +1,30 @@
+test_api_rejects_negative_and_unknown_endpoint (test_algorithms.AlgorithmEdgeCases.test_api_rejects_negative_and_unknown_endpoint) ... ok
+test_bellman_ford_reverse_order_requires_v_minus_one_passes (test_algorithms.AlgorithmEdgeCases.test_bellman_ford_reverse_order_requires_v_minus_one_passes) ... ok
+test_directed_asymmetric_edges (test_algorithms.AlgorithmEdgeCases.test_directed_asymmetric_edges) ... ok
+test_float_and_large_integer (test_algorithms.AlgorithmEdgeCases.test_float_and_large_integer) ... ok
+test_overflow_is_not_unreachable (test_algorithms.AlgorithmEdgeCases.test_overflow_is_not_unreachable) ... ok
+test_random_graphs_against_floyd_warshall (test_algorithms.AlgorithmEdgeCases.test_random_graphs_against_floyd_warshall) ... ok
+test_single_vertex (test_algorithms.AlgorithmEdgeCases.test_single_vertex) ... ok
+test_trace_limits_do_not_change_answers (test_algorithms.AlgorithmEdgeCases.test_trace_limits_do_not_change_answers) ... ok
+test_zero_cycles_self_loops_equal_routes_and_stale_heap (test_algorithms.AlgorithmEdgeCases.test_zero_cycles_self_loops_equal_routes_and_stale_heap) ... ok
+test_cli_bad_input_returns_error (test_algorithms.ComparisonAndCLI.test_cli_bad_input_returns_error) ... ok
+test_cli_from_another_working_directory (test_algorithms.ComparisonAndCLI.test_cli_from_another_working_directory) ... ok
+test_invalid_benchmark_counts (test_algorithms.ComparisonAndCLI.test_invalid_benchmark_counts) ... ok
+test_json_is_strict_and_contains_measurement_evidence (test_algorithms.ComparisonAndCLI.test_json_is_strict_and_contains_measurement_evidence) ... ok
+test_bom_comments_and_blank_lines (test_algorithms.InputValidation.test_bom_comments_and_blank_lines) ... ok
+test_duplicate_keys_rejected (test_algorithms.InputValidation.test_duplicate_keys_rejected) ... ok
+test_malformed_and_nonfinite_inputs (test_algorithms.InputValidation.test_malformed_and_nonfinite_inputs) ... ok
+test_payload_is_never_executed (test_algorithms.InputValidation.test_payload_is_never_executed) ... ok
+test_animation_reset_algorithm_switch_and_final (test_gui.GUIIntegration.test_animation_reset_algorithm_switch_and_final) ... ok
+test_directed_loops_unreachable_and_single_node_render (test_gui.GUIIntegration.test_directed_loops_unreachable_and_single_node_render) ... ok
+test_endpoint_change_and_error_recovery (test_gui.GUIIntegration.test_endpoint_change_and_error_recovery) ... ok
+test_disconnected_and_same_start_goal (test_tugas1.AssignmentExamples.test_disconnected_and_same_start_goal) ... ok
+test_first_example (test_tugas1.AssignmentExamples.test_first_example) ... ok
+test_invalid_input_is_rejected (test_tugas1.AssignmentExamples.test_invalid_input_is_rejected) ... ok
+test_second_example (test_tugas1.AssignmentExamples.test_second_example) ... ok
+test_third_example_and_bh_format (test_tugas1.AssignmentExamples.test_third_example_and_bh_format) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 1.280s
+
+OK
