@@ -8,7 +8,7 @@ import itertools
 import math
 from time import perf_counter_ns
 
-from graph_io import Graph
+from ardi.graph_io import Graph
 
 
 @dataclass(frozen=True)

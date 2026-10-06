@@ -4,8 +4,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from algorithms import bellman_ford, dijkstra
-from graph_io import load_graph
+try:
+    from ardi.algorithms import bellman_ford, dijkstra
+    from ardi.graph_io import load_graph
+except (ImportError, ModuleNotFoundError):
+    from algorithms import bellman_ford, dijkstra
+    from graph_io import load_graph
 
 
 BASE = Path(__file__).parent
