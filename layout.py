@@ -1,11 +1,24 @@
-"""Deterministic spring layout; geometry never supplies algorithm edge weights."""
+"""Tata letak pegas (spring layout) yang deterministik.
+
+Posisi graf hanya untuk visualisasi. Nilai koordinat yang dihasilkan di sini
+tidak pernah menjadi bobot sisi bagi algoritma pencarian, sehingga mengubah
+tata letak tidak mengubah hasil pencarian maupun angka runtime.
+"""
 from __future__ import annotations
 import math
 from graph_io import Graph
 
 
 def graph_positions(graph: Graph) -> dict[str, tuple[float, float]]:
-    """Return normalized positions. Bound relaxation work for larger graphs."""
+    """Kembalikan posisi ternormalisasi setiap simpul sebagai pasangan (x, y).
+
+    Simpul mula-mula diletakkan mengelilingi lingkaran, lalu ditarik oleh gaya
+    tolak (antare simpul) dan gaya tarik (antar sisi), sama seperti pegas.
+    Suhu gaya dikurangi setiap iterasi supaya gerakan mereda dan hasil akhirnya
+    stabil. Jumlah iterasi dibatasi sesuai ukuran graf agar perhitungan ringan.
+
+    Koordinat hasil selalu berada pada rentang 0 sampai 1.
+    """
     vertices = list(graph)
     count = len(vertices)
     if count == 1:

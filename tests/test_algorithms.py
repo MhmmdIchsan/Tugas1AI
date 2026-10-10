@@ -1,4 +1,10 @@
-"""Regression and independent-oracle tests, using only unittest."""
+"""Uji regresi dan uji pembanding independen, hanya memakai unittest.
+
+Uji pembanding tidak membandingkan satu algoritma dengan algoritma lainnya,
+melainkan memakai penyelesaian pemrograman dinamis (Floyd–Warshall) sebagai
+acuan yang berdiri sendiri. Dengan begitu kesalahan yang sama pada dua
+algoritma tidak dapat saling menutupi.
+"""
 from __future__ import annotations
 import json
 import math
@@ -13,7 +19,7 @@ from algorithms import bellman_ford, dijkstra
 from comparison import compare, comparison_data, costs_equal, export_json
 from graph_io import load_graph
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(__file__).resolve().parent.parent
 ALGORITHMS = (dijkstra, bellman_ford)
 
 
@@ -86,7 +92,7 @@ class AlgorithmEdgeCases(unittest.TestCase):
         self.assertEqual(result.metrics.inspected_edges, 9)
 
     def test_random_graphs_against_floyd_warshall(self):
-        # Independent dynamic-programming oracle, not one algorithm testing the other.
+        # Acuan pemrograman dinamis yang independen, bukan satu algoritma menguji yang lain.
         rng = random.Random(1001)
         for case in range(35):
             vertices = [str(i) for i in range(rng.randrange(2, 9))]
@@ -167,7 +173,7 @@ class ComparisonAndCLI(unittest.TestCase):
     def test_cli_from_another_working_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'output.json'
-            result = subprocess.run([sys.executable, str(BASE / 'MMAIKelompokX.py'), '--cli',
+            result = subprocess.run([sys.executable, str(BASE / 'MMAIKelompok5.py'), '--cli',
                                      '--goal', 'V10', '--repeat', '3', '--export', str(output)],
                                     cwd=directory, capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -175,7 +181,7 @@ class ComparisonAndCLI(unittest.TestCase):
             self.assertEqual([r['cost'] for r in data['results']], [400, 400])
 
     def test_cli_bad_input_returns_error(self):
-        result = subprocess.run([sys.executable, str(BASE / 'MMAIKelompokX.py'), '--cli', '--goal', 'UNKNOWN'],
+        result = subprocess.run([sys.executable, str(BASE / 'MMAIKelompok5.py'), '--cli', '--goal', 'UNKNOWN'],
                                 capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 2)
         self.assertIn('Gagal:', result.stderr)

@@ -1,7 +1,13 @@
-"""Two shortest-path algorithms on a shared, nonnegative input domain.
+"""Dua algoritma jalur terpendek pada domain masukan bersama yang sama.
 
-Timing includes initialization, operation counters and reconstruction, but excludes
-input validation. Use record_steps=False for timings without animation tracing.
+Keduanya menerima graf berarah dengan bobot tidak negatif dan berbagi
+kontrak masukan yang identik, sehingga hasilnya selalu dapat dibandingkan
+langsung.
+
+Pengukuran runtime (runtime_ns) mencakup inisialisasi, pencacah operasi, dan
+rekonstruksi rute, tetapi **tidak** mencakup validasi masukan maupun pembacaan
+berkas. Gunakan ``record_steps=False`` bila hanya membutuhkan angka waktu tanpa
+jejak animasi.
 """
 from __future__ import annotations
 
@@ -15,6 +21,17 @@ from graph_io import Graph, Number, validate_graph
 
 @dataclass(frozen=True)
 class Step:
+    """Satu peristiwa pencarian, dipakai sebagai sumber data animasi.
+
+    ``kind`` menentukan jenis peristiwa:
+
+    * ``visit``   — sebuah simpul ditetapkan jaraknya (Dijkstra).
+    * ``inspect`` — sisi (edge) diperiksa, belum tentu menghasilkan perubahan.
+    * ``relax``   — jarak tetangga diperbarui karena ditemukan rute lebih pendek.
+    * ``pass``    — satu putaran penuh pemindaian sisi (Bellman–Ford).
+    * ``done``    — pencarian selesai; selalu menjadi peristiwa terakhir.
+    """
+
     kind: str  # visit, inspect, relax, pass, done
     node: str | None = None
     neighbor: str | None = None
@@ -24,6 +41,12 @@ class Step:
 
 @dataclass(frozen=True)
 class Metrics:
+    """Pencacah operasi hasil pencarian, untuk membandingkan efisiensi.
+
+    ``settled_vertices`` tidak dipakai Bellman–Ford; pada algoritma itu jumlah
+    putaran dikembalikan melalui ``passes``.
+    """
+
     inspected_edges: int = 0
     relaxations: int = 0
     settled_vertices: int = 0
@@ -32,6 +55,13 @@ class Metrics:
 
 @dataclass(frozen=True)
 class Result:
+    """Keluaran lengkap satu algoritma: rute, bobot, waktu, jejak, dan pencacah.
+
+    ``cost`` bernilai ``math.inf`` bila tujuan tidak terjangkau, dan
+    ``path`` berupa daftar kosong dalam kasus tersebut. ``steps`` kosong bila
+    algoritma dijalankan dengan ``record_steps=False``.
+    """
+
     name: str
     path: list[str]
     cost: Number
@@ -42,7 +72,11 @@ class Result:
 
 
 class _Trace:
-    """Bound trace memory without interrupting the actual search."""
+    """Membatasi memori jejak tanpa menghentikan pencarian yang sedang berjalan.
+
+    Jejak berhenti ditambah setelah ``limit`` tercapai dan hanya menandai
+    ``truncated``; jawaban akhirnya tetap dihitung lengkap.
+    """
     def __init__(self, enabled: bool, limit: int) -> None:
         if limit < 1:
             raise ValueError("Batas langkah harus minimal 1.")
@@ -74,7 +108,11 @@ def _path(previous: dict[str, str], start: str, goal: str) -> list[str]:
 
 
 def _sum(cost: Number, weight: Number) -> Number:
-    """Do not confuse float overflow with an unreachable vertex."""
+    """Jumlahkan bobot tanpa tertukar dengan kondisi "tidak terjangkau".
+
+    Luapan (overflow) float harus dilaporkan sebagai kesalahan masukan, bukan
+    dibiarkan menjadi ``inf`` yang artinya "tidak ada jalur".
+    """
     try:
         value = cost + weight
     except OverflowError as exc:
@@ -86,10 +124,19 @@ def _sum(cost: Number, weight: Number) -> Number:
 
 def dijkstra(graph: Graph, start: str, goal: str, *,
              record_steps: bool = True, max_steps: int = 20_000) -> Result:
-    """Binary heap with lazy duplicates; stop when goal is settled.
+    """Jalur terpendek Dijkstra memakai heap biner (binary heap) dengan duplikat malas.
 
-    O(V + E log(E+1)) time and O(V+E) auxiliary space, excluding trace.
-    For simple graphs this is commonly bounded by O((V+E) log V).
+    Heap menyimpan pasangan ``(jarak, nomor urut, simpul)``. Nomor urut
+    monoton dari ``itertools.count`` diperlukan karena jarak bisa bernilai sama:
+    tanpa pengikat itu, Tuple akan dibandingkan simpul demi simpul.
+
+    Duplikat dibiarkan menumpuk lalu diabaikan ketika keluar dari heap. Cara ini
+    dipilih karena entri yang sama tidak selalu menandakan bahwa pemrosesan
+    sudah melewati titik yang benar. Pencarian berhenti begitu tujuan ditetapkan
+    (settled), sebab pada bobot tidak negatif jarak saat itu sudah final.
+
+    Kompleksitas waktu O(V + E·log(E+1)) dan ruang tambahan O(V+E), di luar
+    jejak animasi. Untuk graf sederhana biasanya dibatasi O((V+E)·log V).
     """
     validate_graph(graph, start, goal)
     began = perf_counter_ns()
@@ -128,12 +175,19 @@ def dijkstra(graph: Graph, start: str, goal: str, *,
 
 def bellman_ford(graph: Graph, start: str, goal: str, *,
                  record_steps: bool = True, max_steps: int = 20_000) -> Result:
-    """Scan edges in place for at most V-1 passes, with early stopping.
+    """Bellman–Ford: pindai seluruh sisi di tempat, maksimum V-1 putaran.
 
-    O(VE+V) time, O(V+E) auxiliary space (an explicit edge list is stored).
-    This application's shared input contract rejects negative weights; this is
-    not a general negative-weight/negative-cycle Bellman-Ford API. In-place
-    updates can propagate several edges in one pass.
+    Berbeda dari Dijkstra, bobot disimpan dalam daftar sisi eksplisit sehingga
+    tiap putaran benar-benar memeriksa semua sisi. Putaran dihentikan lebih
+    awal begitu tidak ada satu pun jarak yang berubah, karena kondisi itu sudah
+    menjamin kestabilan jarak.
+
+    Pembaruan dilakukan di tempat (in-place), sehingga satu putaran dapat
+    menyalurkan beberapa sisi sekaligus. Kontrak masukan bersama aplikasi
+    ini menolak bobot negatif, jadi ini bukan API Bellman–Ford umum yang
+    menangani bobot negatif maupun siklus berbobot negatif.
+
+    Kompleksitas waktu O(VE+V) dan ruang tambahan O(V+E).
     """
     validate_graph(graph, start, goal)
     began = perf_counter_ns()

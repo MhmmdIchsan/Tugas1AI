@@ -1,4 +1,10 @@
-"""Integration checks for the three merged UI components on a real Tk display."""
+"""Uji integrasi tiga komponen antarmuka yang digabung, pada layar Tk sungguhan.
+
+Cakupan uji: sinkronisasi graf dengan tabel kanan, maju/mundur langkah, putar
+jeda, pergantian algoritma, seret simpul, zoom, geser, atur ulang tampilan,
+ekspor hasil, berkas tidak valid, dan kasus tepi graf. Bila Tk atau layar tidak
+tersedia, kelas ini dilewati dan dilaporkan sebagai skipped.
+"""
 from pathlib import Path
 from types import SimpleNamespace
 import json
@@ -7,7 +13,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(__file__).resolve().parent.parent
 
 
 class MergedGUI(unittest.TestCase):
@@ -149,19 +155,30 @@ class MergedGUI(unittest.TestCase):
         self.assertEqual(self.app.playback.index, 0)
 
     def test_edge_cases_and_resize(self):
-        for name in ('berarah.txt', 'bobot_nol.txt', 'tidak_terjangkau.txt', 'awal_sama_tujuan.txt'):
-            self.app.open_file(BASE / 'examples' / name)
-            self.wait_until(lambda: not self.app.busy)
-            self.app.show_final()
-            self.assert_synchronized()
-            self.app.geometry('1100x760')
-            self.app.update()
-            self.app.results_panel.notebook.select(0)
-            self.app.update()
-            button = self.app.results_panel.export_button
-            self.assertLessEqual(button.winfo_rooty() + button.winfo_height(),
-                                 self.app.winfo_rooty() + self.app.winfo_height())
-            self.app.results_panel.notebook.select(1)
+        # Empat kasus tepi ditulis langsung di sini, bukan dimuat dari folder
+        # contoh, supaya repo tidak perlu menyimpan berkas graf tambahan.
+        edge_cases = {
+            'berarah.txt': "graph = {'A': {'B': 2, 'C': 9}, 'B': {'A': 8, 'C': 1}, 'C': {}}" "\nA C" "\n",
+            'bobot_nol.txt': "graph = {'A': {'A': 0, 'B': 0, 'C': 5}, 'B': {'A': 0, 'C': 2}, 'C': {}}" "\nA C" "\n",
+            'tidak_terjangkau.txt': "graph = {'A': {'B': 2}, 'B': {}, 'C': {}}" "\nA C" "\n",
+            'awal_sama_tujuan.txt': "graph = {'A': {'B': 4}, 'B': {'A': 4}}" "\nA A" "\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for name, content in edge_cases.items():
+                path = Path(directory) / name
+                path.write_text(content, encoding='utf-8')
+                self.app.open_file(path)
+                self.wait_until(lambda: not self.app.busy)
+                self.app.show_final()
+                self.assert_synchronized()
+                self.app.geometry('1100x760')
+                self.app.update()
+                self.app.results_panel.notebook.select(0)
+                self.app.update()
+                button = self.app.results_panel.export_button
+                self.assertLessEqual(button.winfo_rooty() + button.winfo_height(),
+                                     self.app.winfo_rooty() + self.app.winfo_height())
+                self.app.results_panel.notebook.select(1)
 
     def test_export_json_and_text(self):
         with tempfile.TemporaryDirectory() as directory:

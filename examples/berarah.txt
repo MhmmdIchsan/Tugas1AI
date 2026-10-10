@@ -1,3 +1,0 @@
-# A ke B berbeda bobot dengan B ke A.
-graph = {'A': {'B': 2, 'C': 9}, 'B': {'A': 8, 'C': 1}, 'C': {}}
-A C

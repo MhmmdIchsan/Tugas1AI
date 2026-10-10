@@ -1,16 +1,33 @@
-"""Safe parser for the graph/graf assignment format in the task PDF."""
+"""Pembaca dan pemeriksa aman untuk format graf ``graph``/``graf`` pada soal.
+
+Modul ini menjadi satu-satunya pintu masuk data dari luar: berkas dibaca,
+diurai, lalu divalidasi sebelum diserahkan ke algoritma. Semua pemeriksaan yang
+sama juga dijalankan ulang di dalam algoritma, sehingga pemanggilan API secara
+langsung tidak bisa melewati aturan yang sama.
+"""
 from __future__ import annotations
 
 import ast
 import math
 from pathlib import Path
 
-Number = int | float
-Graph = dict[str, dict[str, Number]]
+Number = int | float  # bobot sisi: bilangan bulat atau pecahan
+Graph = dict[str, dict[str, Number]]  # verteks -> {tetangga: bobot}
 
 
 def validate_graph(graph: Graph, start: str, goal: str) -> None:
-    """Validate file input as well as direct algorithm API calls."""
+    """Periksa kontrak masukan, lalu naikkan ``ValueError`` bila tidak terpenuhi.
+
+    Aturan yang diperiksa:
+
+    * graf berupa dictionary yang tidak kosong;
+    * nama verteks berupa teks tidak kosong dan tanpa spasi;
+    * verteks awal dan tujuan terdaftar pada graf;
+    * setiap tetangga juga terdaftar sebagai verteks;
+    * bobot berupa angka, bukan boolean, dan tidak negatif serta finite.
+
+    Fungsi ini tidak mengubah ``graph``.
+    """
     if not isinstance(graph, dict) or not graph:
         raise ValueError("Graf harus berupa dictionary yang tidak kosong.")
     if not all(isinstance(v, str) and v and not any(c.isspace() for c in v) for v in graph):
@@ -30,10 +47,17 @@ def validate_graph(graph: Graph, start: str, goal: str) -> None:
 
 
 def load_graph(path: str | Path) -> tuple[Graph, str, str]:
-    """Read literal data only; reject duplicate keys instead of losing edges.
+    """Baca berkas graf dan kembalikan ``(graf, awal, tujuan)``.
 
-    Supports UTF-8/BOM, blank lines, comments, and the compact BH example.
-    File size is bounded to protect interactive use from accidental huge input.
+    Isi berkas dibaca sebagai literal data, bukan dieksekusi sebagai kode
+    Python: hanya satu pernyataan ``graph = {...}`` atau
+    ``graf = {...}``, diikuti baris terakhir berisi dua verteks. Baris kosong,
+    komentar ``#``, dan penanda BOM UTF-8 diabaikan.
+
+    Kunci duplikat ditolak secara eksplisit agar tidak ada sisi yang hilang
+    tanpa pemberitahuan. Bentuk ``BH`` untuk nama verteks satu karakter juga
+    diterima sesuai contoh soal. Ukuran berkas dibatasi supaya penggunaan
+    interaktif tidak tersedak masukan yang tidak disengaja.
     """
     with Path(path).open("r", encoding="utf-8-sig") as stream:
         source = stream.read(2_000_001)

@@ -1,4 +1,9 @@
-"""Meaningful checks for the three assignment examples and failure cases."""
+"""Pemeriksaan bermakna untuk tiga contoh soal dan kasus masukan tidak valid.
+
+Uji ini memakai data soal apa adanya (berkas ``graf.txt`` serta contoh B dan C),
+sehingga menangkap regresi pada jalur, bobot minimum, dan penanganan masukan
+rusak.
+"""
 
 from pathlib import Path
 import tempfile
@@ -8,7 +13,7 @@ from algorithms import bellman_ford, dijkstra
 from graph_io import load_graph
 
 
-BASE = Path(__file__).parent
+BASE = Path(__file__).resolve().parent.parent
 
 
 class AssignmentExamples(unittest.TestCase):

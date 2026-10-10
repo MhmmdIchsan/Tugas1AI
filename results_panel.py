@@ -1,32 +1,89 @@
-"""Right panel adapted from Ardi: result cards and live distance table."""
+"""Panel kanan antarmuka: perbandingan hasil algoritma dan simulasi langkah.
+
+Panel ini (``ResultsPanel``) terbagi menjadi dua tab:
+
+* Tab "Hasil Perbandingan" memuat kartu header yang menyebut simpul awal dan
+  tujuan beserta ringkasan perbandingan, dua kartu hasil—one untuk Dijkstra,
+  satu untuk Bellman–Ford—yang memuat rute, bobot total, runtime, dan jumlah
+  langkah, lalu satu kartu catatan analitis tentang algoritma mana yang
+  lebih cepat pada pengukuran tadi.
+* Tab "Simulasi Langkah" memuat ringkasan langkah yang sedang berjalan
+  beserta bilah kemajuan, dan sebuah tabel keadaan langsung yang berisi
+  simpul (vertex), jarak d[v], pendahulu (predecessor) via π(v), serta
+  keterangan status tiap simpul seperti "Rute Terpendek", "Jarak Diperbarui",
+  atau "Belum Terjangkau (∞)".
+
+Kedua tab disinkronkan dengan pemutar ulang (playback). Setiap kali pengguna
+memutar, menjeda, menggeser, atau mundur satu langkah, objek ``Playback``
+mengirim keadaan terbaru ke ``ResultsPanel.render``; panel lalu menggambar ulang
+seluruh isinya mengikuti langkah tersebut. Tab "Hasil Perbandingan" terisi
+sekali pada hitungan pertama dan tetap sama selama pemutaran, sedangkan tabel
+jarak selalu mencerminkan langkah yang sedang diputar.
+"""
 from __future__ import annotations
 import math
 import tkinter as tk
 from tkinter import ttk
 from playback import number as format_number
 
-# Warna
-BG_MAIN = "#F8FAFC"       # Slate 50
-CARD_BG = "#FFFFFF"       # White
-CARD_BORDER = "#E2E8F0"   # Slate 200
-TEXT_MAIN = "#0F172A"     # Slate 900
-TEXT_MUTED = "#64748B"    # Slate 500
-TEXT_SUBTLE = "#94A3B8"   # Slate 400
+# Palet warna. Semua warna ditulis sebagai literal heksadesimal supaya panel
+# tidak bergantung pada tema ttk di luar dirinya, dan nilainya sengaja tidak
+# diubah—hanya keterangan perannya yang ditulis di sini.
 
-COLOR_START = "#10B981"   # Emerald 500
-COLOR_START_BG = "#ECFDF5"# Emerald 50
-COLOR_GOAL = "#EF4444"    # Red 500
-COLOR_GOAL_BG = "#FEF2F2" # Red 50
-COLOR_CURRENT = "#F59E0B" # Amber 500
-COLOR_CURRENT_BG = "#FFFBEB" # Amber 50
-COLOR_VISITED = "#3B82F6" # Blue 500
-COLOR_VISITED_BG = "#EFF6FF" # Blue 50
-COLOR_PATH = "#2563EB"    # Blue 600
-COLOR_EDGE = "#CBD5E1"    # Slate 300
-COLOR_GRID = "#F1F5F9"    # Slate 100
+# Warna dasar: latar panel, isi kartu, dan warna teks.
+BG_MAIN = "#F8FAFC"       # Latar panel dan kartu: area di belakang simpul
+CARD_BG = "#FFFFFF"       # Isi kartu dan tabel (putih)
+CARD_BORDER = "#E2E8F0"   # Garis tipis pembatas kartu
+TEXT_MAIN = "#0F172A"     # Teks utama, misalnya judul kartu dan nilai metrik
+TEXT_MUTED = "#64748B"    # Teks sekunder, misalnya label baris metrik
+TEXT_SUBTLE = "#94A3B8"   # Teks paling redup, untuk keterangan kecil
+
+# Warna status simpul. Tiap status punya dua warna: warna solid untuk bercak
+# pada graf, dan warna latar pucat (varian *-BG) untuk baris tabel.
+COLOR_START = "#10B981"   # Simpul awal, titik asal pencarian
+COLOR_START_BG = "#ECFDF5"# Latar baris tabel untuk simpul awal
+COLOR_GOAL = "#EF4444"    # Simpul tujuan, titik akhir pencarian
+COLOR_GOAL_BG = "#FEF2F2" # Latar baris tabel untuk simpul tujuan
+COLOR_CURRENT = "#F59E0B" # Simpul yang sedang diproses pada langkah terkini
+COLOR_CURRENT_BG = "#FFFBEB" # Latar baris tabel untuk simpul yang aktif
+COLOR_VISITED = "#3B82F6" # Simpul yang jaraknya sudah ditetapkan (tetap permanen)
+COLOR_VISITED_BG = "#EFF6FF" # Latar baris tabel untuk simpul yang sudah ditetapkan
+COLOR_PATH = "#2563EB"    # Sisi dan simpul yang membentuk rute terpendek
+COLOR_EDGE = "#CBD5E1"    # Sisi (edge) umum pada graf yang belum menjadi rute
+COLOR_GRID = "#F1F5F9"    # Garis bantu pada kanvas graf
 
 
 class ResultsPanel(tk.Frame):
+    """Panel kanan berisi dua tab: ringkasan perbandingan dan simulasi langkah.
+
+Panel dibangun sebagai ``tk.Frame`` biasa. Isinya terbagi menjadi tab
+    "Hasil Perbandingan" (hasil akhir kedua algoritma, tidak berubah selama
+    pemutaran) dan tab "Simulasi Langkah" (keadaan graf pada langkah yang
+    sedang diputar, berubah mengikuti pemutaran ulang). Tab perbandingan
+    diberi area gulir (scroll) agar isi kartu tidak terpotong pada panel
+    yang pendek. Tombol simpan diletakkan di bagian bawah panel, di luar
+    notebook, agar tetap terlihat meski isi tab sedang digulir.
+
+    Atribut yang dipegang panel:
+
+    * ``route_header_var``, ``route_summary_var`` — teks header dan ringkasan
+      pada tab perbandingan.
+    * ``dijkstra_card``, ``bellman_card`` — kamus (dictionary) dengan kunci
+      ``frame``, ``path``, ``cost``, ``time``, ``steps``, yang dipakai
+      `clear` dan `show_results` untuk mengisi angka.
+    * ``insight_text_var`` — catatan analitis tentang runtime.
+    * ``dist_tree`` — tabel jarak yang juga dibaca langsung oleh bagian
+      grafik antarmuka, sehingga keduanya tidak pernah berbeda isi.
+    * ``algorithm_label``, ``summary``, ``progress_text``, ``progress_bar``,
+      ``action_title``, ``action_detail`` — bagian atas tab simulasi yang
+      diperbarui pada setiap langkah.
+
+    Antarmuka publiknya sengaja dibatasi pada tiga metode: `clear`,
+    `show_results`, dan `render`. Metode privat lain hanya dipakai di dalam
+    kelas.
+    """
+
+    # Membangun notebook, dua tab, tombol simpan, dan isi tiap tab.
     def __init__(self, parent, app):
         super().__init__(parent, bg=CARD_BG)
         self.app = app
@@ -53,6 +110,17 @@ class ResultsPanel(tk.Frame):
         self.export_button.pack(side='bottom', fill='x', pady=(9, 0), before=self.notebook)
 
     def clear(self):
+        """Kosongkan tab perbandingan sebelum perhitungan baru dimulai.
+
+        Dipanggil setiap kali pengguna menekan hitung ulang atau mengganti
+        graf, supaya angka lama tidak sempat tertinggal di layar. Header,
+        ringkasan, dan catatan analitis diganti teks "sedang dihitung",
+        sedangkan keempat metrik pada tiap kartu dikembalikan ke tanda
+        pisah (—) karena belum ada hasil yang sah untuk ditampilkan.
+
+        Tabel jarak tidak ikut dikosongkan di sini; pengisian ulang barisnya
+        ditangani pemanggil agar isinya sesuai graf yang baru dimuat.
+        """
         self.route_header_var.set('Menghitung kedua algoritma…')
         self.route_summary_var.set('Hasil baru akan tampil setelah perhitungan selesai.')
         self.insight_text_var.set('')
@@ -61,6 +129,38 @@ class ResultsPanel(tk.Frame):
                 card[key].configure(text='—')
 
     def show_results(self, comparison, start, goal):
+        """Isi tab perbandingan dari hasil satu kali perbandingan.
+
+        Parameter:
+
+        * ``comparison`` — objek ``Comparison`` dari modul ``comparison``,
+          berisi ``results`` (keluaran lengkap kedua algoritma, termasuk
+          ``path``, ``cost``, ``steps``, dan ``metrics``), ``timings``
+          (statistik runtime), serta ``consistent`` yang menandai apakah
+          kedua algoritma sepakat soal bobot minimum.
+        * ``start`` — nama simpul asal.
+        * ``goal`` — nama simpul tujuan.
+
+        Yang diperbarui: header menjadi pencarian jalur dari ``start`` ke
+        ``goal``; tiap kartu algoritma terisi rute, bobot (diformat dengan
+        ``format_number``), runtime median dari benchmark, serta jumlah
+        rekaman langkah dan sisi yang diperiksa; lalu satu baris ringkasan
+        yang membaca perbandingan itu. Ringkasan yang sama juga disalin ke
+        ``self.summary`` milik tab simulasi, sehingga kedua tab menyebut
+        hasil yang sama persis.
+
+        Bila bobot kedua algoritma berbeda, ringkasan memperingatkan bahwa
+        ada yang perlu diperiksa pada masukan atau implementasi. Bila
+        tujuan tidak terjangkau, keduanya disebut tidak terjangkau. Selain
+        itu, ringkasan menyatakan apakah rutenya identik atau hanya
+        berbobot sama. Kartu catatan analitis diisi algoritma dengan runtime
+        median terendah beserta rasionya terhadap yang tertinggi, disertai
+        peringatan bahwa runtime tidak mencakup animasi maupun pencatatan
+        langkah dan dapat berbeda antar-eksekusi.
+
+        Metode ini hanya mengisi nilai; pemutaran ulang belum dimulai saat
+        dipanggil, jadi pemutar ulang tetap perlu disiapkan oleh pemanggil.
+        """
         self.route_header_var.set(f'Pencarian jalur [{start}] → [{goal}]')
         cards = (self.dijkstra_card, self.bellman_card)
         for card, result in zip(cards, comparison.results):
@@ -86,6 +186,46 @@ class ResultsPanel(tk.Frame):
             ' Runtime tidak mencakup animasi atau pencatatan langkah. Hasil dapat berubah antar-eksekusi.')
 
     def render(self, state):
+        """Gambar ulang seluruh tab simulasi mengikuti keadaan pemutaran saat ini.
+
+        Parameter ``state`` adalah objek ``Playback`` (atau apa pun yang
+        memenuhi kontrak sama) yang menyimpan ``graph``, ``start``, ``goal``,
+        ``result``, ``index``, ``distances``, ``previous``, ``visited``,
+        ``current``, ``updated``, ``finished``, ``title``, dan ``detail``.
+
+        Bagian atas tab lebih dulu diperbarui: judul dan penjelasan langkah,
+        nama algoritma, serta bilah kemajuan yang menunjukkan ``index``
+        terhadap jumlah langkah. Setelah itu tiap simpul (vertex) pada graf
+        ditulis ulang satu baris tabel dengan empat kolom: nama simpul
+        disertai peran "(Awal)", "(Tujuan)", atau "(Awal/Tujuan)" bila
+        berimpit; jarak d[v] yang diformat; pendahulu (predecessor) dari
+        ``state.previous``, atau tanda pisah bila belum ada; dan keterangan
+        status. Baris yang sudah ada hanya diperbarui lewat ``item``, baris
+        baru disisipkan lewat ``insert``, sehingga posisi baris di tabel
+        tetap mengikuti urutan simpul pada graf dan pilihan pengguna tidak
+        hilang. Baris juga diberi ``tag`` warna agar warnanya ikut berubah
+        mengikuti status baru.
+
+        Urutan pemeriksaan status menentukan apa yang ditampilkan bila
+        beberapa kondisi berlaku bersamaan. Diurutkan dari yang paling
+        khusus: simpul pada rute terpendek (hanya setelah pencarian selesai),
+        simpul yang jaraknya baru diperbarui pada langkah ini, simpul yang
+        sedang diproses, simpul yang sudah ditetapkan, simpul awal, simpul
+        yang sudah punya jarak berhingga, lalu simpul yang belum terjangkau
+        (jarak tak hingga). Pengecualian khusus Bellman–Ford: bila pencarian
+        selesai, jejaknya tidak terpotong, dan jaraknya berhingga, simpul
+        ditampilkan sebagai tetap permanen karena algoritma itu tidak
+        membedakan simpul yang sudah ditetapkan maupun belum.
+
+        Di akhir, tabel digulir (``see``) ke simpul yang baru diperbarui,
+        yang sedang diproses, atau—bila pencarian selesai—simpul tujuan, agar
+        baris yang sedang menjelaskan langkah berada di pandangan.
+
+        Metode inilah yang menjaga panel tetap sinkron dengan pemutaran:
+        ia dipanggil setiap kali keadaan berubah, sehingga menggeser slider
+        ke belakang juga menampilkan keadaan yang benar, bukan sekadar
+        menjalankan ulang animasi.
+        """
         result = state.result
         self.action_title.set(state.title)
         self.action_detail.set(state.detail)
@@ -121,6 +261,8 @@ class ResultsPanel(tk.Frame):
         if self.dist_tree.exists(target):
             self.dist_tree.see(target)
 
+    # Membangun tab simulasi langkah: judul algoritma, ringkasan, bilah kemajuan,
+    # kartu langkah terkini, dan tabel jarak yang dapat digulir.
     def _build_simulation_tab(self, parent):
         header = tk.Frame(parent, bg=CARD_BG, padx=12, pady=12)
         header.pack(fill='x')
@@ -151,7 +293,8 @@ class ResultsPanel(tk.Frame):
                           font=('Segoe UI', 9), anchor='w', justify='left')
         detail.pack(fill='x')
         action.bind('<Configure>', lambda e: [w.configure(wraplength=max(180, e.width-26)) for w in (title, detail)])
-        # Live Distances Table (Shows current best known distances in a structured table)
+        # Tabel jarak terkini: jarak terbaik yang sudah diketahui tiap simpul,
+        # disusun rapi dalam tabel berlabel simpul, d[v], via π(v), dan status.
         dist_frame = tk.Frame(parent, bg=CARD_BG, padx=12, pady=4)
         dist_frame.pack(fill="both", expand=True, pady=(0, 8))
 
@@ -190,7 +333,8 @@ class ResultsPanel(tk.Frame):
         self.dist_tree.column("via", width=55, minwidth=45, anchor="center")
         self.dist_tree.column("status", width=152, minwidth=120, anchor="w")
 
-        # Treeview Tag Styles
+        # Gaya baris tabel lewat tag Treeview: satu pasangan warna per status
+        # simpul, dipakai ulang setiap kali baris digambar ulang.
         self.dist_tree.tag_configure("start", background="#ECFDF5", foreground="#065F46")
         self.dist_tree.tag_configure("goal", background="#FEF2F2", foreground="#991B1B")
         self.dist_tree.tag_configure("relaxed", background="#DCFCE7", foreground="#15803D")
@@ -205,8 +349,10 @@ class ResultsPanel(tk.Frame):
         self.dist_tree.pack(side="left", fill="both", expand=True)
         dist_scroll.pack(side="right", fill="y")
 
+    # Membangun tab hasil perbandingan yang dapat digulir: kartu judul,
+    # dua kartu algoritma, dan kartu catatan analitis.
     def _build_results_tab(self, parent: tk.Frame) -> None:
-        # Comparison Header Card
+        # Kartu judul: simpul asal dan tujuan, disusul ringkasan perbandingan.
         info_card = tk.Frame(parent, bg="#F8FAFC", padx=14, pady=10, highlightbackground=CARD_BORDER, highlightthickness=1)
         info_card.pack(fill="x", padx=12, pady=(12, 8))
 
@@ -230,11 +376,11 @@ class ResultsPanel(tk.Frame):
             justify="left"
         ).pack(anchor="w", pady=(3, 0))
 
-        # Comparison Cards (Dijkstra vs Bellman-Ford)
+        # Wadah dua kartu perbandingan: Dijkstra di atas, Bellman–Ford di bawahnya.
         cards_container = tk.Frame(parent, bg=CARD_BG)
         cards_container.pack(fill="both", expand=True, padx=12, pady=4)
 
-        # Dijkstra Card
+        # Kartu Dijkstra, dengan badge yang menyebut teknik antrean prioritasnya.
         self.dijkstra_card = self._create_algo_card(
             cards_container,
             title="Dijkstra",
@@ -244,7 +390,8 @@ class ResultsPanel(tk.Frame):
         )
         self.dijkstra_card["frame"].pack(fill="x", pady=(0, 8))
 
-        # Bellman-Ford Card
+        # Kartu Bellman–Ford, dengan badge yang menyebut teknik relaksasi(iteratif)
+        # atas sisi yang dipindai berulang.
         self.bellman_card = self._create_algo_card(
             cards_container,
             title="Bellman–Ford",
@@ -254,7 +401,8 @@ class ResultsPanel(tk.Frame):
         )
         self.bellman_card["frame"].pack(fill="x", pady=(0, 8))
 
-        # Analytical Insight Card
+        # Kartu catatan analitis: algoritma mana yang lebih cepat menurut
+        # pengukuran, beserta peringatan cara mengukur runtime.
         insight_frame = tk.Frame(parent, bg="#F0FDF4", padx=12, pady=8, highlightbackground="#BBF7D0", highlightthickness=1)
         insight_frame.pack(fill="x", padx=12, pady=(0, 12))
         insight = tk.Label(insight_frame, textvariable=self.insight_text_var, bg='#F0FDF4', fg='#166534',
@@ -262,10 +410,11 @@ class ResultsPanel(tk.Frame):
         insight.pack(fill='x')
         insight_frame.bind('<Configure>', lambda e: insight.configure(wraplength=max(180, e.width-28)))
 
+    # Membangun satu kartu hasil algoritma dan mengembalikan label metriknya.
     def _create_algo_card(self, parent: tk.Frame, title: str, badge_text: str, badge_bg: str, badge_fg: str) -> dict:
         frame = tk.Frame(parent, bg=CARD_BG, padx=12, pady=10, highlightbackground=CARD_BORDER, highlightthickness=1)
 
-        # Header of card
+        # Bagian atas kartu: nama algoritma di kiri, badge teknik di kanan.
         card_header = tk.Frame(frame, bg=CARD_BG)
         card_header.pack(fill="x")
 
@@ -287,27 +436,27 @@ class ResultsPanel(tk.Frame):
             pady=2
         ).pack(side="right")
 
-        # Metric values
+        # Empat baris metrik: rute, bobot total, runtime, dan jumlah langkah.
         metrics_grid = tk.Frame(frame, bg=CARD_BG, pady=6)
         metrics_grid.pack(fill="x")
         metrics_grid.columnconfigure(1, weight=1)
 
-        # Row 1: Path
+        # Baris 1: rute (path) hasil pencarian, dapat membungkus beberapa baris.
         tk.Label(metrics_grid, text="Rute:", bg=CARD_BG, fg=TEXT_MUTED, font=("Segoe UI", 9), width=8, anchor="w").grid(row=0, column=0, sticky="w")
         path_label = tk.Label(metrics_grid, text="-", bg=CARD_BG, fg=COLOR_PATH, font=("Consolas", 9, "bold"), anchor="w", wraplength=340, justify="left")
         path_label.grid(row=0, column=1, sticky="w")
 
-        # Row 2: Total Cost
+        # Baris 2: bobot total (total cost) rute tersebut.
         tk.Label(metrics_grid, text="Bobot:", bg=CARD_BG, fg=TEXT_MUTED, font=("Segoe UI", 9), width=8, anchor="w").grid(row=1, column=0, sticky="w")
         cost_label = tk.Label(metrics_grid, text="-", bg=CARD_BG, fg=TEXT_MAIN, font=("Segoe UI", 9, "bold"), anchor="w")
         cost_label.grid(row=1, column=1, sticky="w")
 
-        # Row 3: Runtime
+        # Baris 3: runtime median hasil benchmark, bukan satu kali eksekusi.
         tk.Label(metrics_grid, text="Waktu:", bg=CARD_BG, fg=TEXT_MUTED, font=("Segoe UI", 9), width=8, anchor="w").grid(row=2, column=0, sticky="w")
         time_label = tk.Label(metrics_grid, text="-", bg=CARD_BG, fg=TEXT_MAIN, font=("Segoe UI", 9, "bold"), anchor="w")
         time_label.grid(row=2, column=1, sticky="w")
 
-        # Row 4: Steps Count
+        # Baris 4: jumlah rekaman langkah (steps) yang dipakai animasi.
         tk.Label(metrics_grid, text="Langkah:", bg=CARD_BG, fg=TEXT_MUTED, font=("Segoe UI", 9), width=8, anchor="w").grid(row=3, column=0, sticky="w")
         steps_label = tk.Label(metrics_grid, text="-", bg=CARD_BG, fg=TEXT_MUTED, font=("Segoe UI", 9), anchor="w")
         steps_label.grid(row=3, column=1, sticky="w")

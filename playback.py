@@ -1,4 +1,9 @@
-"""Replay algorithm events without re-running or re-timing the search."""
+"""Putar ulang peristiwa algoritma tanpa menjalankan ulang pencarian.
+
+Objek ini membaca ``Result.steps`` yang sudah terekam dan membangun keadaan
+graf pada langkah tertentu. Karena pencarian tidak diulang, bergerak maju dan
+mundur tidak mengubah runtime maupun hasil perhitungan.
+"""
 
 from __future__ import annotations
 
@@ -9,17 +14,24 @@ from graph_io import Graph
 
 
 def number(value: float) -> str:
+    """Ubah jarak menjadi teks; ``inf`` ditampilkan sebagai simbol tak hingga."""
     return "∞" if value == math.inf else str(value) if isinstance(value, int) else f"{value:.12g}"
 
 
 class Playback:
-    """One cursor into a search trace, with reversible, deterministic state."""
+    """Satu penunjuk (cursor) ke dalam jejak pencarian, dengan keadaan yang bisa dibalik.
+
+    Keadaan yang dipelihara ulang antara lain jarak setiap simpul,
+    simpul yang sudah ditetapkan, sisi yang sedang aktif, serta judul dan
+    penjelasan langkah untuk panel kanan.
+    """
 
     def __init__(self, graph: Graph, start: str, goal: str, result: Result) -> None:
         self.graph, self.start, self.goal, self.result = graph, start, goal, result
         self.reset()
 
     def reset(self) -> None:
+        """Kembalikan playback ke langkah 0, sebelum pencarian dimulai."""
         self.index = 0
         self.distances = {vertex: math.inf for vertex in self.graph}
         self.distances[self.start] = 0
@@ -34,6 +46,12 @@ class Playback:
         self.detail = f"Jarak {self.start} dimulai dari 0. Simpul lainnya belum terjangkau (∞). Tekan Putar untuk mulai."
 
     def advance(self) -> bool:
+        """Majukan satu langkah jejak; mengembalikan False bila sudah selesai.
+
+        Tiap jenis peristiwa diperlakukan berbeda: ``pass`` memulai putaran
+        Bellman–Ford baru, ``visit`` menetapkan simpul, ``inspect`` dan
+        ``relax`` menyorot sisi, dan ``done`` menutup pencarian.
+        """
         if self.index >= len(self.result.steps):
             return False
         step = self.result.steps[self.index]
@@ -77,7 +95,12 @@ class Playback:
         return True
 
     def seek(self, index: int) -> None:
-        """Rebuild state from the same recorded trace; runtime stays unchanged."""
+        """ Lompat ke langkah tertentu dengan memutar ulang jejak yang sama.
+
+        Melompat ke belakang dilakukan dengan ``reset`` lalu memutar maju
+        seminimal mungkin, sehingga keadaan akhir selalu sama dengan bila
+        langkah dijalankan satu per satu. Runtime hasil perhitungan tetap.
+        """
         target = max(0, min(int(index), len(self.result.steps)))
         if target < self.index:
             self.reset()

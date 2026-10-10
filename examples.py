@@ -1,7 +1,8 @@
-"""Canonical input examples from pages 3–4 of the assignment PDF.
+"""Tiga contoh masukan resmi dari halaman 3-4 PDF tugas.
 
-Examples live separately from the editable ``graf.txt`` so the example chooser
-always opens the original assignment data, whatever the current working folder.
+Berkas contoh disimpan terpisah dari ``graf.txt`` yang dapat diedit pengguna,
+sehingga pemilih contoh selalu membuka data asli soal apa pun folder kerja
+yang sedang dipakai.
 """
 
 from dataclasses import dataclass
@@ -10,6 +11,12 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class Example:
+    """Satu pilihan contoh di pemilih pada GUI.
+
+    ``expected_cost`` adalah bobot minimum hasil jawaban resmi; dipakai uji
+    untuk memeriksa bahwa aplikasi masih menghitung hal yang sama.
+    """
+
     key: str
     title: str
     description: str
@@ -43,5 +50,10 @@ EXAMPLES: tuple[Example, ...] = (
 
 
 def example_path(example: Example) -> Path:
-    """Return an absolute path without depending on the launch directory."""
+    """Kembalikan lokasi absolut berkas contoh, bebas dari folder kerja aktif.
+
+    Path dihitung relatif terhadap berkas modul ini, sehingga berkas
+    ``contoh/contoh_a.txt`` tetap ditemukan walau aplikasi dijalankan dari
+    folder lain.
+    """
     return Path(__file__).resolve().parent / "contoh" / example.filename

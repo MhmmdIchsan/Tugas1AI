@@ -1,4 +1,18 @@
-"""Merged application: Ichsan shell, Irfan graph canvas, Ardi right panel."""
+"""Aplikasi gabungan: kerangka Ichsan, kanvas graf Irfan, panel kanan Ardi.
+
+Modul ini merangkai tiga bagian tampilan menjadi satu jendela Tkinter: kerangka
+aplikasi berupa header dan panel pengaturan sumber graf di bagian atas, kanvas
+graf interaktif di tengah, dan panel hasil di sisi kanan. Antarmukanya bertema
+terang, dengan panel kendali animasi diletakkan tepat di bawah graf.
+
+Dua aturan membentuk cara kerja aplikasi ini. Pertama, perhitungan algoritma
+dijalankan di thread pekerja (worker thread) dan hasilnya dikirim kembali lewat
+antrean, sehingga jendela tetap responsif selama proses pencarian; hanya thread
+utama yang boleh menyentuh widget Tk. Kedua, animasi tidak mengulang pencarian.
+Setelah algoritma selesai, objek playback memutar ulang jejak langkah (trace)
+yang sudah terekam satu per satu, sehingga majunya dan mundurnya animasi tidak
+mengubah runtime maupun hasil perhitungan.
+"""
 
 from __future__ import annotations
 
@@ -20,12 +34,35 @@ from playback import Playback, number
 BG, WHITE, INK, MUTED = "#eef3f6", "#ffffff", "#172b3a", "#627789"
 BORDER, TEAL, SOFT = "#dce5eb", "#087f8c", "#e8f5f5"
 DIJKSTRA, BELLMAN = "Dijkstra", "Bellman–Ford"
-DEFAULT_SOURCE = "graf.txt · file utama"
-SPEEDS = {"0.5×": 840, "1×": 420, "2×": 210, "4×": 105}
-CANVAS_HINT = "Seret simpul · gulir untuk zoom · seret latar untuk menggeser · klik kanan: awal/tujuan"
+DEFAULT_SOURCE = "graf.txt · file utama"  # Label bawaan untuk graf utama yang dibuka otomatis begitu jendela pertama kali tampil.
+SPEEDS = {"0.5×": 840, "1×": 420, "2×": 210, "4×": 105}  # Memetakan label kecepatan pada ComboBox ke jeda antar frame animasi dalam milidetik.
+CANVAS_HINT = "Seret simpul · gulir untuk zoom · seret latar untuk menggeser · klik kanan: awal/tujuan"  # Petunjuk default di bawah kanvas; diganti info simpul saat kursor menyentuhnya.
 
 
 class ShortestPathApp(tk.Tk):
+    """Jendela utama aplikasi eksplorasi jalur terpendek.
+
+    Kelas ini turun dari ``tk.Tk`` dan menjadi pusat rangkai seluruh
+    antarmuka: ia membangun sendiri kerangka halaman, menyimpan keadaan aplikasi
+    pada atribut, lalu meneruskannya ke kanvas graf dan panel hasil. Pengaturan
+    awal (gaya, tata letak, pintasan papan tik) dikerjakan di dalam
+    konstruktor, sedangkan pemuatan graf pertama ditunda sampai siklus
+    peristiwa (event loop) benar-benar berjalan.
+
+    Pembagian tanggung jawabnya kira-kira sebagai berikut. ``calculate()``
+    menjadi pintu masuk tunggal untuk setiap perhitungan baru: ia membersihkan
+    keadaan lama, menjalankan ``compare()`` di thread pekerja, lalu menunggu
+    hasilnya melalui polling berkala. Hasil yang masuk diolah sepenuhnya di
+    thread utama oleh ``_poll_result()``, yang juga membangun objek playback
+    untuk animasi.
+
+    Atribut keadaan penting dibagi menjadi tiga kelompok: ``graph``/``start``/
+    ``goal`` untuk data masukan, ``results``/``comparison`` untuk keluaran
+    perhitungan, dan ``playback``/``playing``/``timer`` untuk pemutaran animasi.
+    Variabel Tk yang berawalan ``self.step_*``, ``self.progress_*``, dan
+    ``self.canvas_hint`` hanya berfungsi sebagai tempat teks tampilan, bukan
+    sebagai sumber kebenaran.
+    """
     def __init__(self, default_file: Path) -> None:
         super().__init__()
         self.title("Jalur Terpendek · Gabungan Ichsan, Irfan & Ardi")
@@ -71,6 +108,7 @@ class ShortestPathApp(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.startup_timer = self.after_idle(self._load_initial)
 
+    # Terapkan tema ttk beserta ukuran huruf, warna, dan keadaan fokus seluruh widget.
     def _style(self) -> None:
         style = ttk.Style(self)
         style.theme_use("clam")
@@ -99,11 +137,13 @@ class ShortestPathApp(tk.Tk):
                         foreground=MUTED, padding=(4, 8))
         self.option_add("*TCombobox*Listbox.font", ("Segoe UI", 10))
 
+    # Bungkus tk.Label agar huruf, warna teks, dan latar seragam di seluruh tampilan.
     @staticmethod
     def _label(parent, text="", variable=None, size=10, color=INK, bold=False, bg=WHITE, **kwargs):
         return tk.Label(parent, text=text, textvariable=variable, bg=bg, fg=color,
                         font=("Segoe UI", size, "bold" if bold else "normal"), **kwargs)
 
+    # Susun tiga bagian jendela: header, panel pengaturan, lalu isi halaman.
     def _build(self) -> None:
         header = tk.Frame(self, bg=BG, padx=24, pady=16)
         header.pack(fill="x")
@@ -151,6 +191,7 @@ class ShortestPathApp(tk.Tk):
         self._build_transport(left)
         self._build_results(body)
 
+    # Bangun area peta graf beserta tombol zoom, legenda warna, dan baris petunjuk.
     def _build_stage(self, parent) -> None:
         stage = tk.Frame(parent, bg=WHITE, highlightbackground=BORDER, highlightthickness=1)
         stage.grid(row=0, column=0, sticky="nsew")
@@ -171,6 +212,7 @@ class ShortestPathApp(tk.Tk):
         hint.pack(fill="x", padx=14, pady=(0, 9))
         stage.bind("<Configure>", lambda e: hint.configure(wraplength=max(250, e.width - 30)))
 
+    # Bangun panel kendali di bawah graf: pemilih algoritma, kecepatan, transport, dan keterangan langkah.
     def _build_transport(self, parent) -> None:
         panel = tk.Frame(parent, bg=WHITE, padx=12, pady=10, highlightbackground=BORDER, highlightthickness=1)
         panel.grid(row=1, column=0, sticky="ew", pady=(10, 0))
@@ -204,6 +246,7 @@ class ShortestPathApp(tk.Tk):
         text.pack(fill="x", pady=(3, 0))
         detail.bind("<Configure>", lambda e: text.configure(wraplength=max(250, e.width - 24)))
 
+    # Pasang panel hasil di kolom kanan dan ambil rujukan ke tabel jarak di dalamnya.
     def _build_results(self, parent):
         self.results_panel = ResultsPanel(parent, self)
         self.results_panel.grid(row=0, column=1, sticky='nsew')
@@ -216,6 +259,7 @@ class ShortestPathApp(tk.Tk):
 
 
 
+    # Jalankan aksi pintasan kecuali bila fokus sedang berada di kolom isian atau kendali.
     @staticmethod
     def _shortcut(event, callback):
         if event.widget.winfo_class() in {"TCombobox", "Entry", "TEntry", "Text", "TScale", "TButton", "Treeview"}:
@@ -223,6 +267,7 @@ class ShortestPathApp(tk.Tk):
         callback()
         return "break"
 
+    # Muat graf utama saat jendela muncul, atau pakai contoh pertama bila berkasnya tidak ada.
     def _load_initial(self) -> None:
         self.startup_timer = None
         if self.default_file.exists():
@@ -230,12 +275,21 @@ class ShortestPathApp(tk.Tk):
         else:
             self.open_file(example_path(EXAMPLES[0]), EXAMPLES[0].title)
 
+    # Muat graf yang dipilih pengguna lewat daftar contoh pada ComboBox sumber.
     def _select_source(self, _event=None) -> None:
         label = self.source.get()
         if label in self.source_paths:
             self.open_file(self.source_paths[label], label)
 
     def choose_file(self) -> None:
+        """Buka dialog pilihan berkas untuk memuat graf dari lokasi sembarang.
+
+        Dipanggil dari tombol "Buka file…". Selama perhitungan berjalan tombol
+        ini sudah dinonaktifkan, tetapi pemeriksaannya tetap dipertahankan
+        sebagai pengaman bila dipanggil dari pintasan atau pemicu lain. Label
+        sumber sengaja dikosongkan agar ``open_file()`` menamainya sendiri
+        dengan pola "File · <nama>".
+        """
         if self.busy:
             return
         path = filedialog.askopenfilename(title="Buka file graf", filetypes=[("Graf teks", "*.txt"), ("Semua berkas", "*.*")])
@@ -243,6 +297,23 @@ class ShortestPathApp(tk.Tk):
             self.open_file(Path(path))
 
     def open_file(self, path: Path, label: str | None = None) -> None:
+        """Muat graf dari ``path``, perbarui seluruh tampilan, lalu hitung ulang.
+
+        Satu-satunya jalur masuk untuk data graf baru, dipakai oleh dialog
+        ``choose_file()``, pemilih contoh pada ComboBox, dan pemuatan awal
+        aplikasi. Urutan kerjanya: membatalkan pemuatan tertunda, membaca
+        berkas lewat ``load_graph()``, lalu menolak graf yang melebihi batas
+        120 simpul atau 1200 entri sisi karena mesin animasi tidak sanggup
+        menampilkannya dengan nyaman. Kegagalan dibaca atau diurai ditampilkan
+        lewat kotak dialog dan pilihan sumber dikembalikan ke graf sebelumnya,
+        sehingga keadaan lama tidak hilang.
+
+        Setelah berhasil, simpul awal dan tujuan yang dibaca dari berkas
+        menjadi nilai ComboBox, kanvas dan tabel jarak diisi dengan keadaan awal
+        (awal bernilai 0, simpul lain tak hingga), lalu ``calculate()``
+        dijalankan. Perhitungan jumlah sisi menyatukan sisi dua arah yang
+        bobotnya sama, sebab dua entri graf tak berarah hanya dihitung sekali.
+        """
         if self.busy:
             return
         if self.startup_timer:
@@ -279,6 +350,7 @@ class ShortestPathApp(tk.Tk):
             self.distance_table.insert("", "end", iid=vertex, values=(vertex, "∞", "—", "Belum"))
         self.calculate()
 
+    # Terapkan simpul awal atau tujuan yang baru, lalu hitung ulang.
     def _change_endpoints(self, _event=None) -> None:
         if self.busy or not self.graph:
             return
@@ -287,6 +359,13 @@ class ShortestPathApp(tk.Tk):
         self.calculate()
 
     def swap_endpoints(self) -> None:
+        """Tukar posisi simpul awal dan tujuan, lalu jalankan perhitungan baru.
+
+        Tombol "⇄" di panel pengaturan memanggilnya. Nilai kedua ComboBox
+        ditukar lebih dahulu supaya tampilan langsungsinkron, kemudian
+        ``_change_endpoints()`` yang memperbarui kanvas dan menghitung ulang.
+        Tanpa graf atau selagi perhitungan berjalan, permintaan diabaikan.
+        """
         if self.graph and not self.busy:
             start, goal = self.start_value.get(), self.goal_value.get()
             self.start_value.set(goal)
@@ -294,6 +373,21 @@ class ShortestPathApp(tk.Tk):
             self._change_endpoints()
 
     def calculate(self) -> None:
+        """Hitung ulang jarak terpendek dengan Dijkstra dan Bellman–Ford sekaligus.
+
+        Dipanggil setiap kali graf, simpul awal, atau simpul tujuan berubah,
+        sehingga inilah tempat keadaan hasil lama dibuang: animasi dihentikan,
+        panel hasil dikosongkan, tabel jarak diisi ulang dengan keadaan awal,
+        dan objek playback sebelumnya dilepas.
+
+        Pencarian yang berat itu sengaja tidak dijalankan di thread utama: ia
+        berlangsung di thread pekerja berstatus daemon yang tidak menyentuh
+        widget, hanya menaruh keluarannya ke antrean ``self.jobs`` atau objek
+        galat. Thread utama kemudian memeriksa antrean itu tiap 30 milidetik
+        lewat ``_poll_result()``. Selama menunggu, seluruh tombol, ComboBox,
+        tombol radio, dan penggeser dinonaktifkan lewat ``_set_busy()`` supaya
+        pengguna tidak menimpa keadaan yang masih berjalan.
+        """
         if self.busy or not self.graph:
             return
         self._pause()
@@ -321,6 +415,7 @@ class ShortestPathApp(tk.Tk):
         Thread(target=worker, daemon=True).start()
         self.poll_timer = self.after(30, self._poll_result)
 
+    # Aktif atau nonaktifkan seluruh kendali saat perhitungan sedang berjalan, lalu pulihkan keadaan semula.
     def _set_busy(self, busy):
         self.busy = self.canvas.busy = busy
         if busy:
@@ -337,6 +432,7 @@ class ShortestPathApp(tk.Tk):
                 widget.configure(state=state)
             self._busy_widgets.clear()
 
+    # Ambil hasil dari antrean thread pekerja; dijadwalkan ulang tiap 30 milidetik selama belum ada hasil.
     def _poll_result(self):
         self.poll_timer = None
         try:
@@ -357,6 +453,7 @@ class ShortestPathApp(tk.Tk):
         self.results_panel.show_results(result, self.start, self.goal)
         self._select_algorithm()
 
+    # Terima simpul yang ditunjuk klik kanan pada kanvas sebagai awal atau tujuan baru.
     def _set_endpoint(self, role, vertex):
         if self.busy:
             return
@@ -364,6 +461,7 @@ class ShortestPathApp(tk.Tk):
         self._change_endpoints()
 
 
+    # Buat objek playback untuk algoritma terpilih lalu tampilkan keadaan pertamanya.
     def _select_algorithm(self) -> None:
         if self.busy:
             return
@@ -376,6 +474,7 @@ class ShortestPathApp(tk.Tk):
         self._render(False)
 
 
+    # Salin keadaan langkah saat ini ke kanvas, panel hasil, penggeser waktu, dan tombol putar.
     def _render(self, animate: bool = True) -> None:
         state = self.playback
         if not state:
@@ -392,12 +491,27 @@ class ShortestPathApp(tk.Tk):
 
 
     def reset_animation(self) -> None:
+        """Kembalikan animasi ke langkah nol dan tampilkan keadaan awal.
+
+        Berbeda dengan ``toggle_play()``, metode ini selalu berhenti sejenak
+        dulu. Setelah keadaan awal dipulihkan, tampilan digambar ulang tanpa
+        animasi supaya pengguna langsung melihat posisi nol tanpa perlu
+        menunggu frame demi frame. Dipakai juga oleh tombol "Ulangi".
+        """
         self._pause()
         if self.playback:
             self.playback.reset()
             self._render(False)
 
     def toggle_play(self) -> None:
+        """Jeda atau lanjutkan pemutaran animasi, tergantung keadaan saat ini.
+
+        Satu tombol untuk dua aksi. Selama animasi berjalan, metode ini hanya
+        menghentikan tombol ``after()`` yang terjadwal. Sebaliknya, bila
+        animasi sudah sampai pada langkah terakhir, posisi penunjuk
+        dikembalikan ke awal lebih dulu agar tombol "Putar" tidak langsung
+        berhenti lagi. Dijadwalkan sebagai tombol spasi.
+        """
         if not self.playback:
             return
         if self.playing:
@@ -408,6 +522,7 @@ class ShortestPathApp(tk.Tk):
         self.playing = True
         self._tick()
 
+    # Hentikan animasi yang sedang berjalan dan kembalikan teks tombol putar.
     def _pause(self) -> None:
         self.playing = False
         if self.timer:
@@ -416,6 +531,7 @@ class ShortestPathApp(tk.Tk):
         if hasattr(self, "play_button"):
             self.play_button.configure(text="↻  Putar lagi" if self.playback and self.playback.finished else "▶  Putar")
 
+    # Satu detak animasi: majukan langkah, gambar ulang, lalu jadwalkan detak berikutnya sesuai kecepatan.
     def _tick(self) -> None:
         self.timer = None
         if not self.playing or not self.playback:
@@ -427,29 +543,53 @@ class ShortestPathApp(tk.Tk):
         if self.playing:
             self.timer = self.after(SPEEDS[self.speed.get()], self._tick)
 
+    # Terapkan kecepatan baru pada animasi yang sedang berjalan dengan mengatur ulang jeda frame.
     def _change_speed(self, _event=None) -> None:
         if self.playing and self.timer:
             self.after_cancel(self.timer)
             self.timer = self.after(SPEEDS[self.speed.get()], self._tick)
 
     def next_step(self) -> None:
+        """Maju satu langkah animasi, lalu menggambar ulang hasilnya.
+
+        Animasi selalu dihentikan lebih dulu, sehingga menekan tombol ini saat
+        pemutaran berjalan akan mengubahnya menjadi gerakan selangkah.
+        Penggambaran memakai animasi supaya perpindahan jarak pada kanvas tetap
+        terlihat jelas.
+        """
         self._pause()
         if self.playback:
             self.playback.advance()
             self._render()
 
     def previous_step(self) -> None:
+        """Mundur satu langkah animasi, lalu menggambar ulang hasilnya.
+
+        Penunjuk ``Playback.seek()`` mengembalikan keadaan secara deterministik
+        dengan memutar ulang jejak dari awal bila diperlukan, sehingga mundur
+        tidak mengubah hasil perhitungan maupun waktu pengukuran. Karena itu
+        penggambarannya sengaja tanpa animasi: tidak ada transisi, hanya lompat
+        ke posisi yang benar.
+        """
         self._pause()
         if self.playback:
             self.playback.seek(self.playback.index - 1)
             self._render(False)
 
     def show_final(self) -> None:
+        """Lompat langsung ke langkah terakhir dan tampilkan hasil akhir.
+
+        Setara dengan menggeser penggeser waktu ke ujung. Animasi dihentikan,
+        lalu penunjuk diarahkan ke jumlah langkah yang tercatat, sehingga
+        pengguna dapat langsung melihat jalur terpendek atau keterangan bahwa
+        tujuan tidak terjangkau tanpa melewati langkah-langkah sebelumnya.
+        """
         self._pause()
         if self.playback:
             self.playback.seek(len(self.playback.result.steps))
             self._render()
 
+    # Lompat ke langkah yang digeser pengguna lewat penggeser waktu.
     def _seek(self, value: str) -> None:
         if self._syncing or not self.playback:
             return
@@ -458,8 +598,15 @@ class ShortestPathApp(tk.Tk):
         self._render(False)
 
     def reset_view(self) -> None:
+        """Kembalikan tampilan kanvas ke posisi, skala, dan penempatan semula.
+
+        Meneruskan permintaan ke ``GraphCanvas``. Perintah ini hanya menyentuh
+        viewport, yaitu bagian layar yang terlihat, tanpa memengaruhi graf,
+        hasil perhitungan, atau posisi animasi.
+        """
         self.canvas.reset_view()
 
+    # Tampilkan jarak dan daftar tetangga simpul yang sedang disorot kursor pada baris petunjuk.
     def _hover_vertex(self, vertex: str | None) -> None:
         if vertex is None or vertex not in self.graph:
             self.canvas_hint.set(CANVAS_HINT)
@@ -469,6 +616,15 @@ class ShortestPathApp(tk.Tk):
         self.canvas_hint.set(f"{vertex} · jarak {number(distance)} · tetangga: {neighbors or 'tidak ada'}")
 
     def export_results(self) -> None:
+        """Simpan hasil perbandingan ke berkas yang dipilih pengguna.
+
+        Pengguna yang menentukan akhiran berkasnya: akhiran ``.txt``
+        menghasilkan ringkasan yang enak dibaca manusia, sedangkan bawaan
+        lainnya memakai ``.json`` dari modul perbandingan agar isinya bisa
+        diolah lagi di luar aplikasi. Yang ditulis pada kedua bentuk mencakup
+        jalur, bobot total, dan statistik runtime tiap algoritma beserta catatan
+        cara pengukurannya.
+        """
         if self.busy or self.comparison is None:
             return
         path = filedialog.asksaveasfilename(parent=self, title='Simpan hasil perbandingan', defaultextension='.json',
@@ -493,6 +649,14 @@ class ShortestPathApp(tk.Tk):
 
 
     def close(self) -> None:
+        """Tutup jendela dengan rapi: batalkan semua rutinitas terjadwal.
+
+        Dipasang sebagai penangan ``WM_DELETE_WINDOW``, sehingga tombol tutup
+        bawaan sistem juga ikut melalui jalur yang sama. Animasi dihentikan,
+        pemuatan awal yang masih tertunda dan pemeriksaan antrean hasil
+        dibatalkan, lalu kanvas dilepas sebelum jendela dihancurkan. Thread
+        pekerja tidak perlu dihentikan karena dibuat berstatus daemon.
+        """
         self._pause()
         if self.startup_timer:
             self.after_cancel(self.startup_timer)

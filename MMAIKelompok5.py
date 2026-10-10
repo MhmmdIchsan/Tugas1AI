@@ -1,4 +1,14 @@
-"""Entry point. Rename X to your group number; sibling modules stay unchanged."""
+"""Titik masuk aplikasi gabungan Dijkstra dan Bellman–Ford — MMAI1001.
+
+Dua mode jalan:
+
+* Tanpa argumen: membuka antarmuka graphical (GUI) berbasis Tkinter.
+* Dengan ``--cli``: menjalankan perbandingan di terminal dan mencetak ringkasan,
+  tanpa memerlukan layar.
+
+Berkas graf dibaca relatif terhadap lokasi berkas ini, sehingga aplikasi tetap
+menemukan berkas default dan folder contoh dari folder kerja mana pun.
+"""
 from __future__ import annotations
 
 import argparse
@@ -9,7 +19,30 @@ from comparison import compare, comparison_data, export_json, format_number
 from graph_io import load_graph
 
 
+def _prepare_stdout() -> None:
+    """Paksa keluaran terminal ke UTF-8.
+
+    Console Windows bawaan (``cp1252``/``charmap``) tidak dapat mencetak
+    karakter seperti ``→`` dan ``–`` yang dipakai pada keluaran perbandingan.
+    Kegagalan encoding membuat program berhenti dengan galat yang menyesatkan,
+    jadi keluaran dialihkan ke UTF-8 lebih dulu bila stdout mendukungnya.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    """Jalankan aplikasi; kembalikan kode keluar untuk argv yang diberikan.
+
+    Mengembalikan 0 bila pencarian sukses, 1 bila kedua algoritma memberi
+    bobot berbeda, dan 2 bila masukan tidak valid atau GUI tidak dapat dibuka.
+    """
+    _prepare_stdout()
     parser = argparse.ArgumentParser(description="Perbandingan Dijkstra dan Bellman–Ford — MMAI1001")
     parser.add_argument("file", nargs="?", type=Path, default=Path(__file__).with_name("graf.txt"),
                         help="file graf; default graf.txt di sebelah program")
@@ -46,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError as exc:
         print(f"GUI membutuhkan Python dengan Tcl/Tk (Tkinter): {exc}\n"
               "Uji instalasi: python -m tkinter. Lihat README.md.\n"
-              "Mode terminal tetap tersedia: python MMAIKelompokX.py --cli", file=sys.stderr)
+              "Mode terminal tetap tersedia: python MMAIKelompok5.py --cli", file=sys.stderr)
         return 2
     try:
         ShortestPathApp(args.file).mainloop()

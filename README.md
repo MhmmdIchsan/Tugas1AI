@@ -8,34 +8,30 @@ Satu aplikasi mandiri yang menggabungkan tiga karya:
 | Graf dan animasi | **Irfan** | Kanvas gelap, grid titik, tata letak spring, simpul bercahaya, jarak di simpul, pohon pendahulu, sisi Bézier, partikel bergerak, animasi jalur akhir, tooltip, geser simpul, klik kanan untuk awal/tujuan |
 | Panel kanan | **Ardi** | Tab Hasil Perbandingan dan Simulasi Langkah, kartu kedua algoritma, badge metode, tabel Simpul / Jarak d[v] / Via π[v] / Keterangan, warna status, auto-scroll |
 
-Ketiga folder sumber tidak diperlukan saat menjalankan aplikasi ini. Semua kode dan contoh input yang dibutuhkan ada di folder `gabungan`.
+Ketiga folder sumber tidak diperlukan saat menjalankan aplikasi ini. Semua kode dan contoh input yang dibutuhkan ada di folder ini.
 
 ## Menjalankan
 
 Gunakan Python 3.10+ dengan Tkinter. Aplikasi hanya memakai pustaka standar; tidak membutuhkan paket pip.
 
-Dari folder `AI`:
+Dari folder repo:
 
 ```bash
-python Tugas1AI/gabungan/MMAIKelompokX.py
+python MMAIKelompok5.py
 ```
 
-Atau dari folder `gabungan`:
+Mode terminal tetap bisa digunakan tanpa layar:
 
 ```bash
-python MMAIKelompokX.py
+python MMAIKelompok5.py --cli
+python MMAIKelompok5.py --cli --goal V10 --export hasil_V10.json
 ```
+
+Folder tujuan ekspor harus sudah ada; aplikasi membuat berkas, bukan foldernya.
 
 Gunakan `python3` jika nama perintah Python pada sistem Anda adalah `python3`. Berkas default dan contoh ditemukan relatif terhadap program, sehingga aplikasi bisa dibuka dari folder kerja lain.
 
-Untuk memeriksa Tkinter, jalankan `python -m tkinter`. GUI memerlukan sesi desktop; mode terminal tetap bisa digunakan tanpa layar:
-
-```bash
-python MMAIKelompokX.py --cli
-python MMAIKelompokX.py --cli --goal V10 --export hasil/hasil_V10.json
-```
-
-Ganti `X` pada nama berkas utama dengan nomor kelompok saat menyiapkan pengumpulan.
+Untuk memeriksa Tkinter, jalankan `python -m tkinter`. GUI memerlukan sesi desktop.
 
 ## Cara memakai GUI
 
@@ -78,7 +74,7 @@ Dijkstra berhenti ketika tujuan ditetapkan. Jarak pada simpul lain yang belum di
 
 | Berkas | Peran |
 |---|---|
-| `MMAIKelompokX.py` | Peluncur GUI/CLI mandiri |
+| `MMAIKelompok5.py` | Peluncur GUI/CLI mandiri |
 | `gui.py` | Desain dan kontrol Ichsan; koordinasi komputasi dan playback |
 | `graph_view.py` | Renderer dan efek animasi dari Irfan, dipisahkan menjadi komponen kanvas |
 | `results_panel.py` | Kartu hasil dan tabel kanan dari Ardi |
@@ -86,26 +82,30 @@ Dijkstra berhenti ketika tujuan ditetapkan. Jarak pada simpul lain yang belum di
 | `algorithms.py`, `graph_io.py`, `comparison.py` | Algoritma, validasi, benchmark, dan ekspor dari Irfan |
 | `layout.py` | Tata letak spring dari Irfan |
 | `examples.py`, `contoh/` | Pemilih tiga contoh soal dari Ichsan |
-| `examples/` | Contoh graf berarah, bobot nol, terputus, dan awal sama dengan tujuan |
-| `test_*.py` | Uji algoritma, input, CLI, dan integrasi GUI |
-| `hasil/` | Log pengujian dan gambar pratinjau aplikasi |
+| `tests/` | Uji algoritma, input, CLI, dan integrasi GUI |
 
 Komputasi dijalankan di thread pekerja; hanya thread utama yang mengakses widget Tk. Satu playback menyuplai keadaan graf dan tabel kanan. Pengukur runtime terpisah dari animasi frame kanvas.
+
+Setiap modul terdokumentasi di dalam berkasnya sendiri memakai docstring berbahasa Indonesia: docstring modul menjelaskan peran dan batas tanggung jawabnya, fungsi dan kelas publik menjelaskan parameter, nilai balik, serta alasan di balik pilihan algoritmanya, sementara method privat diberi komentar satu baris. Baca `help(algorithms)` atau `python -c "import gui; help(gui.ShortestPathApp)"` untuk menampilkannya langsung di terminal.
 
 Untuk menjaga visualisasi tetap responsif, GUI dibatasi 120 simpul dan 1.200 entri sisi; gunakan CLI untuk graf lebih besar. Jejak animasi dibatasi 20.000 langkah, dengan pemberitahuan jika terpotong. Jawaban akhir tetap dihitung lengkap. Keterbacaan graf padat dapat ditingkatkan menggunakan zoom dan geser simpul.
 
 ## Pengujian
 
-Dari folder `gabungan`:
+Dari folder repo:
 
 ```bash
 python -m unittest -v
 ```
 
+Perintah di atas menjalankan seluruh 29 uji di folder `tests/`. Untuk satu berkas saja:
+
+```bash
+python -m unittest tests.test_algorithms
+python -m unittest tests.test_gui
+python -m unittest tests.test_tugas1
+```
+
+Jalankan dari folder repo, bukan `python tests/test_gui.py`: berkas uji mengimpor modul aplikasi pada folder repo, yang tidak ada di `sys.path` bila berkas dijalankan langsung.
+
 Uji GUI membutuhkan Tkinter dan layar yang aktif. Jika tidak tersedia, kelas uji GUI dilaporkan **skipped**, bukan dianggap sudah diuji. Uji mencakup tiga contoh soal, kasus tepi, 35 graf acak dibandingkan dengan Floyd–Warshall, peluncuran CLI dari folder lain, sinkronisasi graf/tabel, maju/mundur, zoom/geser, pergantian algoritma, ekspor, serta tampilan pada ukuran minimum.
-
-Pratinjau:
-
-- [Graf akhir dan tabel jarak](hasil/pratinjau_gabungan.png)
-- [Animasi dan tabel saat pencarian](hasil/pratinjau_simulasi.png)
-- [Kartu hasil perbandingan](hasil/pratinjau_perbandingan.png)

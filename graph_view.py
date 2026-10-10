@@ -1,7 +1,23 @@
-"""Graph canvas adapted from Irfan's renderer, with Ichsan playback integration.
+"""Lapisan render graf pada kanvas Tk.
 
-Dark canvas, Bézier edges, particles, pulses, predecessor tree and path reveal
-are retained. View transforms never change graph weights or replay state.
+Modul ini menyediakan ``GraphCanvas``, subkelas ``tk.Canvas`` yang menerjemahkan
+keadaan playback (animasi algoritma) menjadi gambar di layar. Setiap perubahan
+keadaan dikirim lewat :meth:`GraphCanvas.set_playback`, lalu seluruh graf digambar
+ulang: sisi (edge) berupa kurva Bézier, simpul (vertex) bercahaya (glow), label
+bobot di tengah sisi, spanduk status di kiri atas, dan legenda warna di bawah.
+
+Animasi ditangani oleh jam internal: setiap ``FRAME_MS`` milidetik hanya lapisan
+efek dan tooltip yang dihapus lalu digambar ulang. Dengan begitu partikel, denyut
+pada simpul yang sedang diproses, dan penyingkapan jalur terpendek tetap bergerak
+tanpa harus menggambar ulang sisi dan simpul yang tidak berubah.
+
+Interaksi mouse ditangani langsung di kanvas: seret simpul untuk memindahkannya,
+seret area kosong untuk menggeser tampilan (geser/pan), roda mouse untuk
+memperbesar atau memperkecil (zoom), dan klik kanan pada simpul untuk membuka
+menu untuk menjadikan simpul tersebut sebagai titik awal atau titik tujuan.
+
+Perubahan tampilan apa pun (posisi, zoom, geser) bersifat visual saja dan tidak
+pernah mengubah bobot graf maupun keadaan pemutaran ulang.
 """
 from __future__ import annotations
 import math
@@ -11,55 +27,87 @@ import tkinter.font as tkfont
 from comparison import format_number
 from layout import graph_positions
 
-BG = "#0b1120"
-SURFACE = "#0f172a"
-CARD = "#131c31"
-CARD2 = "#1b2640"
-BORDER = "#26324d"
-INK = "#e2e8f0"
-MUTED = "#8394b0"
-EDGE = "#34425f"
-TREE = "#5b7bb8"
-CYAN = "#22d3ee"
-GREEN = "#34d399"
-RED = "#fb7185"
-AMBER = "#fbbf24"
-VIOLET = "#a78bfa"
-BLUE = "#60a5fa"
-ALGO_COLORS = {"Dijkstra": "#38bdf8", "Bellman–Ford": "#c084fc"}
+BG = "#0b1120"  # warna latar paling belakang, yaitu latar aplikasi yang paling gelap
+SURFACE = "#0f172a"  # permukaan bidang, dipakai pada latar tooltip dan menu
+CARD = "#131c31"  # warna isi kanvas sekaligus dasar pencampuran warna semua elemen
+CARD2 = "#1b2640"  # isi simpul yang belum diproses dan latar menu konteks
+BORDER = "#26324d"  # garis tepi halus, juga dipakai sebagai warna titik grid
+INK = "#e2e8f0"  # warna teks utama, dipakai untuk nama simpul dan isi tooltip
+MUTED = "#8394b0"  # teks sekunder yang sengaja diredupkan, seperti label bobot
+EDGE = "#34425f"  # warna netral untuk sisi (edge) yang bukan bagian pohon pendahulu
+TREE = "#5b7bb8"  # warna sisi (edge) yang sedang dihitung dan simpul yang jaraknya sudah diketahui
+CYAN = "#22d3ee"  # warna aksen jalur terpendek
+GREEN = "#34d399"  # warna titik awal
+RED = "#fb7185"  # warna titik tujuan, juga penanda bila tujuan tidak terjangkau
+AMBER = "#fbbf24"  # warna simpul yang sedang diproses dan cahaya (glow) di sekitarnya
+VIOLET = "#a78bfa"  # warna simpul yang jaraknya sudah ditetapkan final
+BLUE = "#60a5fa"  # warna cadangan untuk tahap melintasi simpul yang belum mulai
+ALGO_COLORS = {"Dijkstra": "#38bdf8", "Bellman–Ford": "#c084fc"}  # memetakan nama algoritma ke warna khasnya
 STORY_COLORS = {"idle": MUTED, "pass": BLUE, "visit": VIOLET, "inspect": CYAN,
-                "skip": MUTED, "relax": AMBER, "done": GREEN}
-FRAME_MS = 33
-INF = math.inf
+                "skip": MUTED, "relax": AMBER, "done": GREEN}  # memetakan jenis peristiwa cerita/langkah ke warna
+FRAME_MS = 33  # jeda antar frame animasi dalam milidetik, jadi sekitar 30 frame per detik
+INF = math.inf  # nilai jarak tak hingga, penanda simpul yang belum pernah terjangkau
 
 
 def mix(color: str, other: str, amount: float) -> str:
-    """Blend two #rrggbb colors; Tk canvas has no alpha, so glows are blends."""
+    """Mencampur dua warna hex; kanvas Tk tidak mendukung alfa, jadi glow dibuat dengan pencampuran.
+
+    Warna ``color`` adalah dasar dan ``other`` adalah warna tuju, sedangkan ``amount``
+    berada pada rentang 0 sampai 1: 0 menghasilkan warna ``color`` sepenuhnya dan
+    1 menghasilkan warna ``other`` sepenuhnya. Hasilnya tetap string hex ``#rrggbb``.
+    """
     a = [int(color[i:i + 2], 16) for i in (1, 3, 5)]
     b = [int(other[i:i + 2], 16) for i in (1, 3, 5)]
     return "#" + "".join(f"{round(x + (y - x) * amount):02x}" for x, y in zip(a, b))
 
 
 def bezier(curve, t: float) -> tuple[float, float]:
-    """Point on a quadratic Bézier (start, control, end); edges and particles share it."""
+    """Menghitung titik pada kurva Bézier kuadrat; sisi dan partikel sama-sama memakainya.
+
+    ``curve`` berisi tiga titik, yaitu awal, titik kendali, dan akhir. Nilai ``t``
+    berjalan dari 0 sampai 1: 0 menghasilkan titik awal dan 1 menghasilkan titik akhir.
+    """
     (x0, y0), (mx, my), (x2, y2) = curve
     a, b, c = (1 - t) ** 2, 2 * (1 - t) * t, t * t
     return a * x0 + b * mx + c * x2, a * y0 + b * my + c * y2
 
 
 def sample(curve, end: float = 1.0, count: int = 14) -> list[float]:
+    """Mengambil sampel titik sepanjang kurva hingga parameter ``end``.
+
+    Hasilnya berupa daftar koordinat pipih yang siap langsung diberikan ke ``create_line``.
+    Nilai ``count`` adalah jumlah titik perantara, sehingga panjang hasilnya
+    ``2 * (count + 1)`` angka.
+    """
     return [coord for k in range(count + 1) for coord in bezier(curve, end * k / count)]
 
 
 def ease(t: float) -> float:
+    """Fungsi penghalus (easing) untuk gerak animasi.
+
+    Nilai ``t`` dijepit ke rentang 0 sampai 1, lalu dipercepat di awal dan melambat
+    mendekati akhir, sehingga partikel terasa mulai cepat lalu melambat saat tiba.
+    """
     return 1 - (1 - min(max(t, 0.0), 1.0)) ** 3
 
 
 def num(value) -> str:
+    """Mengubah angka menjadi teks untuk label.
+
+    Nilai ``INF`` ditampilkan sebagai simbol tak hingga, sedangkan angka biasa
+    diformat sebagai teks pendek memakai ``format_number``.
+    """
     return "∞" if value == INF else format_number(value)
 
 
 class GraphCanvas(tk.Canvas):
+    """Kanvas perender graf interaktif dengan gaya gelap.
+
+    Kelas ini menangani gambar graf, animasi frame, dan interaksi mouse sekaligus.
+    Keadaan visual disalin dari objek playback, sehingga kelas ini tidak pernah
+    mengubah algoritma maupun hasil pemutarannya sendiri.
+    """
+
     def __init__(self, master, on_hover=None, on_endpoint=None, **kwargs):
         kwargs['bg'] = CARD
         super().__init__(master, **kwargs)
@@ -95,6 +143,13 @@ class GraphCanvas(tk.Canvas):
         self.frame_timer = self.after(FRAME_MS, self._frame)
 
     def set_graph(self, graph, start, goal):
+        """Mengisi graf, titik awal, dan titik tujuan, lalu menggambar ulang.
+
+        ``graph`` berupa kamus simpul ke kamus tetangga berbobot, sedangkan ``start``
+        dan ``goal`` adalah nama simpul. Jari-jari simpul menyesuaikan ukuran graf.
+        Posisi dihitung ulang lewat tata letak pegas (spring layout) hanya bila objek
+        graf benar-benar berubah, dan seluruh keadaan pemutaran disetel ulang ke awal.
+        """
         changed = graph is not self.graph
         self.graph, self.start, self.goal = graph, start, goal
         self.radius = 22 if len(graph) <= 20 else max(11, 22-(len(graph)-20)//6)
@@ -109,6 +164,15 @@ class GraphCanvas(tk.Canvas):
         self.draw_graph()
 
     def set_playback(self, state, animate=True, delay=420):
+        """Menyalin satu keadaan playback ke kanvas lalu menggambar ulang.
+
+        ``state`` adalah keadaan dari pemutar yang memuat hasil algoritma, daftar
+        langkah, jarak sementara, pendahulu, simpul yang sudah dikunjungi, serta
+        simpul dan sisi yang sedang aktif. ``animate`` menentukan apakah animasi
+        sisi dan jalur dijalankan, sedangkan ``delay`` menyimpan durasi jeda animasi
+        dalam milidetik. Efeknya: layer graf diperbarui dan jam animasi dihitung ulang
+        tepat saat sisi atau penyelesaian berubah.
+        """
         now = perf_counter()
         new_result = self.results.get(state.result.name) is not state.result
         changed_edge = self.active_edge != state.active_edge
@@ -126,6 +190,7 @@ class GraphCanvas(tk.Canvas):
         self.speed.set(delay)
         self.draw_graph()
 
+    # Menentukan status satu simpul untuk isi tooltip.
     def _status_of(self, vertex):
         if vertex in self.visited:
             return 'final'
@@ -135,18 +200,22 @@ class GraphCanvas(tk.Canvas):
                 return 'final'
         return 'sementara' if self.dist.get(vertex, INF) != INF else 'belum'
 
+    # Mencatat simpul yang diklik, atau memulai proses geser tampilan bila yang diklik adalah area kosong.
     def _press(self, event):
         self.dragged = self._node_at(event.x, event.y)
         self.pan_anchor = None if self.dragged else (event.x, event.y, *self.pan)
 
+    # Mengakhiri seret simpul maupun seret geser.
     def _release(self, _event):
         self.dragged = self.pan_anchor = None
 
+    # Membersihkan status arahkan saat kursor meninggalkan kanvas.
     def _leave(self, _event):
         self.hovered = None
         if self.on_hover:
             self.on_hover(None)
 
+    # Menjalankan seret: memindahkan simpul bila tertangkap, atau menggeser tampilan bila tidak.
     def _drag(self, event):
         if self.dragged:
             left, top, sx, sy = self.bounds
@@ -157,6 +226,7 @@ class GraphCanvas(tk.Canvas):
             self.pan = (px+event.x-x, py+event.y-y)
             self.draw_graph()
 
+    # Membuka menu titik awal atau tujuan pada klik kanan atas sebuah simpul.
     def _context_menu(self, event):
         node = self._node_at(event.x, event.y)
         if node is None or self.busy or self.on_endpoint is None:
@@ -170,6 +240,7 @@ class GraphCanvas(tk.Canvas):
             menu.grab_release()
             menu.destroy()
 
+    # Mengubah tingkat zoom sekaligus mempertahankan titik kursor tetap di tempat.
     def _zoom(self, factor, x=None, y=None):
         width, height = self._canvas_size()
         x, y = width/2 if x is None else x, height/2 if y is None else y
@@ -181,31 +252,43 @@ class GraphCanvas(tk.Canvas):
         self.draw_graph()
 
     def zoom_in(self):
+        """Memperbesar tampilan sebesar satu tingkat dan menggambar ulang."""
         self._zoom(1.12)
 
     def zoom_out(self):
+        """Memperkecil tampilan sebesar satu tingkat dan menggambar ulang."""
         self._zoom(1/1.12)
 
     def reset_view(self):
+        """Mengembalikan tampilan ke keadaan semula.
+
+        Posisi simpul dihitung ulang dari awal dengan tata letak pegas (spring layout),
+        lalu zoom dan geser dikembalikan ke nilai baku.
+        """
         self.positions = graph_positions(self.graph)
         self.zoom, self.pan = 1., (0., 0.)
         self.draw_graph()
 
     def dispose(self):
+        """Menghentikan jam animasi dan membatalkan frame yang terjadwal."""
         if self.frame_timer is not None:
             self.after_cancel(self.frame_timer)
             self.frame_timer = None
 
+    # Menyusun tupel(font, ukuran, tebal) untuk dipakai pada elemen teks kanvas.
     def _font(self, size: int, weight: str = "normal", mono: bool = False):
         return (self.mono if mono else self.family, size, weight)
 
+    # Mengambil ukuran kanvas dengan batas minimum agar tidak nol saat baru dibuat.
     def _canvas_size(self) -> tuple[int, int]:
         return max(self.canvas.winfo_width(), 120), max(self.canvas.winfo_height(), 120)
 
+    # Mencari simpul mana pun yang jaraknya ke titik kursor paling dekat dalam jangkauan.
     def _node_at(self, x: float, y: float) -> str | None:
         return next((v for v, (vx, vy) in self.pixel_positions.items()
                      if math.hypot(x - vx, y - vy) <= self.radius + 4), None)
 
+    # Memperbarui simpul yang sedang diarahkan dan kursor tangan saat kursor bergerak.
     def _hover(self, event) -> None:
         node = self._node_at(event.x, event.y)
         if node != self.hovered:
@@ -214,6 +297,7 @@ class GraphCanvas(tk.Canvas):
             if self.on_hover:
                 self.on_hover(node)
 
+    # Menggambar ulang grid titik dan seluruh graf setiap kali ukuran kanvas berubah.
     def _on_resize(self, _event=None) -> None:
         canvas = self.canvas
         canvas.delete("grid")
@@ -226,6 +310,12 @@ class GraphCanvas(tk.Canvas):
         self.draw_graph()
 
     def draw_graph(self) -> None:
+        """Menggambar ulang seluruh layer ``graph`` dari keadaan saat ini.
+
+        Menghapus isi tag ``graph``, lalu menggambar sisi, label bobot, simpul,
+        spanduk status, dan legenda. Dipanggil setiap kali keadaan playback,
+        posisi simpul, zoom, atau geser berubah.
+        """
         if not hasattr(self, "canvas"):
             return
         canvas = self.canvas
@@ -261,7 +351,7 @@ class GraphCanvas(tk.Canvas):
                 x2, y2 = positions[neighbor]
                 distance = max(math.hypot(x2 - x1, y2 - y1), 0.001)
                 ux, uy = (x2 - x1) / distance, (y2 - y1) / distance
-                # Opposite arcs with different weights bend to opposite sides.
+                # Busur berlawanan arah dengan bobot berbeda dibelokkan ke arah yang berlawanan.
                 bend = 0 if reciprocal or vertex not in self.graph[neighbor] else 36
                 tail = r + (2 if reciprocal else 5)
                 curve = ((x1 + ux * (r + 2), y1 + uy * (r + 2)),
@@ -336,7 +426,7 @@ class GraphCanvas(tk.Canvas):
                 break
 
     def _frame(self) -> None:
-        """Animation clock: redraw only the cheap fx/tip layers every frame."""
+        """Jam animasi: hanya layer efek dan tooltip murah yang digambar ulang tiap frame."""
         self.frame_timer = self.after(FRAME_MS, self._frame)
         canvas, now = self.canvas, perf_counter()
         canvas.delete("fx", "tip")
